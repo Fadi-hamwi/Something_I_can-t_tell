@@ -38,6 +38,7 @@ WordCount *word_counts = NULL;
 /* The maximum length of each word in a file */
 #define MAX_WORD_LEN 64
 
+
 /*
  * 3.1.1 Total Word Count
  *
@@ -45,7 +46,26 @@ WordCount *word_counts = NULL;
  * Useful functions: fgetc(), isalpha().
  */
 int num_words(FILE* infile) {
+  if(infile == NULL) {
+    fprintf(stdout, "num_words function infile is NULL");
+    return ERROR_STATUS;
+  }
+  
   int num_words = 0;
+  int c; // For handling EOF c must be integer not char.
+  bool still_word = false;
+
+  while((c = fgetc(infile)) != EOF) {
+    if(!isalpha(c)) {
+      num_words++;
+      still_word = false;
+    }else {
+      still_word = true;
+    }
+  }
+
+  if(still_word) num_words++;
+  rewind(infile);
 
   return num_words;
 }
@@ -62,6 +82,37 @@ int num_words(FILE* infile) {
  * and 0 otherwise.
  */
 int count_words(WordCount **wclist, FILE *infile) {
+  if(wclist == NULL || infile == NULL) {
+    return ERROR_STATUS;
+  }
+
+  char word[MAX_WORD_LEN] = {0};
+  int c;
+  int i = 0;
+  
+  while((c = fgetc(infile)) != EOF) {
+    if(!isalpha(c)) {
+      word[i] = '\0';
+      i = 0; // reset the ptr.
+      if(add_word(wclist, word)) {
+        fprintf(stderr, "couldn't add word to the WordCount list.\n");
+        return ERROR_STATUS;
+      }
+    }else {
+      word[i++] = tolower(c);
+    }  
+  }
+
+  rewind(infile); 
+
+  if(i > 0) {
+    word[i] = '\0';
+    if(add_word(wclist, word)) {
+      fprintf(stderr, "ERROR: Couldn't add word to the WordCount list.\n");
+      return ERROR_STATUS;
+    }
+  }
+
   return 0;
 }
 
@@ -70,7 +121,10 @@ int count_words(WordCount **wclist, FILE *infile) {
  * Useful function: strcmp().
  */
 static bool wordcount_less(const WordCount *wc1, const WordCount *wc2) {
-  return 0;
+  if(wc1->count == wc2->count) {
+    return strcmp(wc1->word, wc2->word) < 0;
+  }
+  return wc1->count < wc2->count;
 }
 
 // In trying times, displays a helpful message.
@@ -133,10 +187,37 @@ int main (int argc, char *argv[]) {
   if ((argc - optind) < 1) {
     // No input file specified, instead, read from STDIN instead.
     infile = stdin;
+    FILE *tmp = tmpfile();
+    if (!tmp) {
+      fprintf(stderr,"tmpfile failed");
+      return 1;
+    }
+
+    // Copy stdin to the temporary file
+    int c;
+    while ((c = fgetc(infile)) != EOF) {
+        fputc(c, tmp);
+    }
+
+    rewind(tmp);
+    count_words(&word_counts, tmp);
+    total_words += num_words(tmp);
   } else {
     // At least one file specified. Useful functions: fopen(), fclose().
     // The first file can be found at argv[optind]. The last file can be
     // found at argv[argc-1].
+
+    for(i = optind; i < argc; ++i) {
+      infile = fopen(argv[i], "r");
+      if(infile == NULL) {
+        fprintf(stderr, "ERROR: Couldn't open the file maybe it doesn't exist or wrong name.\n");
+        continue;
+      }
+      
+      count_words(&word_counts, infile);
+      total_words += num_words(infile);
+      fclose(infile);
+    }
   }
 
   if (count_mode) {
@@ -146,6 +227,6 @@ int main (int argc, char *argv[]) {
 
     printf("The frequencies of each word are: \n");
     fprint_words(word_counts, stdout);
-}
+  }
   return 0;
 }
