@@ -35,20 +35,52 @@
 /*
  * main - handle command line, spawning one thread per file.
  */
+typedef struct args {
+      word_count_list_t* wcs;
+      FILE* infile;
+} args;
+
+void* count_words_helper(void* a) {
+    args* args_ptr = (args*)a;
+    count_words(args_ptr->wcs, args_ptr->infile);
+    fclose(args_ptr->infile);
+    free(args_ptr);
+    return NULL;
+}
+
 int main(int argc, char* argv[]) {
-  /* Create the empty data structure. */
-  word_count_list_t word_counts;
-  init_words(&word_counts);
+    word_count_list_t word_counts;
+    init_words(&word_counts); // Ensure this initializes a mutex
 
-  if (argc <= 1) {
-    /* Process stdin in a single thread. */
-    count_words(&word_counts, stdin);
-  } else {
-    /* TODO */
-  }
-
-  /* Output final result of all threads' work. */
-  wordcount_sort(&word_counts, less_count);
-  fprint_words(&word_counts, stdout);
-  return 0;
+    if (argc <= 1) {
+        count_words(&word_counts, stdin);
+    } else {
+        pthread_t threads[argc - 1];
+        for (int i = 1; i < argc; i++) {
+            args* a = malloc(sizeof(args));
+            if (a == NULL) { /* handle error */ continue; }
+            a->wcs = &word_counts; // Share the same list
+            a->infile = fopen(argv[i], "r");
+            if (a->infile == NULL) {
+                fprintf(stderr, "Failed to open %s\n", argv[i]);
+                free(a);
+                continue;
+            }
+            int rc = pthread_create(&threads[i - 1], NULL, count_words_helper, (void*)a);
+            if (rc) { /* handle error */ 
+              printf("ERROR; Couldn't create a thread for %s", argv[i]);
+              fclose(a->infile);
+              free(a);
+              continue;
+            }
+        }
+        // Join all threads
+        for (int i = 0; i < argc - 1; i++) {
+            pthread_join(threads[i], NULL);
+        }
+    }
+    // Output results
+    wordcount_sort(&word_counts, less_count);
+    fprint_words(&word_counts, stdout);
+    return 0;
 }
